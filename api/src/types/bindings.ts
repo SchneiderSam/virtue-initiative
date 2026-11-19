@@ -20,7 +20,14 @@ export interface Env {
   AWS_SECRET_ACCESS_KEY: string;
   AWS_SES_REGION: string;
   AWS_SES_FROM_EMAIL: string;
-  EMAIL_DELIVERY_MODE: 'ses' | 'log';
+  EMAIL_DELIVERY_MODE: 'ses' | 'log' | 'smtp';
+  // SMTP delivery, used when EMAIL_DELIVERY_MODE is 'smtp' (self-hosted instances without SES).
+  // SMTP_PORT 465 uses implicit TLS; any other port upgrades with STARTTLS.
+  SMTP_HOST?: string;
+  SMTP_PORT?: string;
+  SMTP_USER?: string;
+  SMTP_PASSWORD?: string;
+  SMTP_FROM_EMAIL?: string;
   BUG_REPORT_EMAIL: string;
   // Comma-separated SNS topic ARNs accepted by POST /email/sns (API-041). Unset rejects all.
   SNS_TOPIC_ARNS?: string;
