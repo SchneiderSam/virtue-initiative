@@ -1,4 +1,5 @@
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import { WorkerMailer } from 'worker-mailer';
 import { v4 as uuidv4 } from 'uuid';
 import { EmailKind } from './email-domain';
 import { findPermanentEmailBounce, findUserByEmail, setEmailTokenBounce } from './db';
@@ -84,6 +85,45 @@ function getSesClient(env: Env) {
   return sesClient;
 }
 
+function toBase64(data: Uint8Array) {
+  let binary = '';
+  for (let i = 0; i < data.length; i += 0x8000) {
+    binary += String.fromCharCode(...data.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function sendViaSmtp(input: SendEmailInput) {
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL } = input.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD || !SMTP_FROM_EMAIL) {
+    throw new Error('SMTP delivery needs SMTP_HOST, SMTP_USER, SMTP_PASSWORD and SMTP_FROM_EMAIL');
+  }
+  const port = Number(SMTP_PORT ?? '465');
+  await WorkerMailer.send(
+    {
+      host: SMTP_HOST,
+      port,
+      secure: port === 465,
+      startTls: port !== 465,
+      credentials: { username: SMTP_USER, password: SMTP_PASSWORD },
+      authType: ['plain', 'login'],
+    },
+    {
+      from: { name: FROM_DISPLAY_NAME, email: SMTP_FROM_EMAIL },
+      to: { email: input.recipient },
+      reply: input.replyTo,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+      attachments: input.attachments?.map((a) => ({
+        filename: a.fileName,
+        content: toBase64(a.data),
+        mimeType: a.contentType,
+      })),
+    },
+  );
+}
+
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const id = uuidv4();
 
@@ -153,6 +193,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 
   try {
+    if (input.env.EMAIL_DELIVERY_MODE === 'smtp') {
+      await sendViaSmtp(input);
+      return { id };
+    }
+
     const response = await getSesClient(input.env).send(
       new SendEmailCommand({
         FromEmailAddress: withDisplayName(input.env.AWS_SES_FROM_EMAIL),
