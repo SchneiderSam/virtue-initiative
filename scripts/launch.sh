@@ -13,6 +13,10 @@
 #             (plus donate.[domain].localhost with --donate) via Caddy reverse
 #             proxy (https), mimicking the production URL structure.
 #             app.[domain].localhost/api is routed through Vite's /api proxy to wrangler.
+#   --public-url
+#             Serve on localhost behind a reverse proxy or tunnel (such as a Cloudflare
+#             Tunnel) that forwards URL to the web port. The web app is reached at URL, and
+#             links in emails point there. The landing site stays on localhost.
 #
 # Ports are random unless VIRTUE_API_PORT, VIRTUE_WEB_PORT, VIRTUE_LANDING_PORT,
 # VIRTUE_DONATE_PORT and VIRTUE_HASH_PORT set them, which keeps a client build's
@@ -25,9 +29,10 @@
 # top of it, and the merged values are passed through to the relevant dev
 # servers.
 
-USAGE="Usage: $0 [--donate] [--host ADDRESS | domain]"
+USAGE="Usage: $0 [--donate] [--host ADDRESS | --public-url URL | domain]"
 DOMAIN=""
 HOST=""
+PUBLIC_URL=""
 DONATE=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -35,6 +40,14 @@ while [ $# -gt 0 ]; do
         --host)
             HOST="${2:-}"
             [ -n "$HOST" ] || { echo "--host needs an address" >&2; exit 1; }
+            shift
+            ;;
+        --public-url)
+            PUBLIC_URL="${2:-}"
+            case "$PUBLIC_URL" in
+                https://*) ;;
+                *) echo "--public-url needs an https:// URL" >&2; exit 1 ;;
+            esac
             shift
             ;;
         -h | --help)
@@ -50,8 +63,12 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-if [ -n "$HOST" ] && [ -n "$DOMAIN" ]; then
-    echo "--host and a domain can't be used together." >&2
+modes=0
+for mode in "$HOST" "$DOMAIN" "$PUBLIC_URL"; do
+    [ -n "$mode" ] && modes=$((modes + 1))
+done
+if [ "$modes" -gt 1 ]; then
+    echo "--host, --public-url and a domain can't be used together." >&2
     exit 1
 fi
 
@@ -302,6 +319,40 @@ elif [ -n "$HOST" ]; then
     [ "$DONATE" = 1 ] && start_donate "$LANDING_URL"
     run "web"     "32" "web"     bun run dev -- --port "$WEB_PORT" --host "$HOST"
     run "landing" "34" "landing" bun run dev -- --port "$LANDING_PORT" --host "$HOST"
+elif [ -n "$PUBLIC_URL" ]; then
+    # The proxy in front terminates https and forwards to the web port. The web app proxies
+    # /api and /r2 to the API, so one public hostname covers both and the session cookie
+    # stays first-party.
+    PUBLIC_URL="${PUBLIC_URL%/}"
+    PUBLIC_HOST="${PUBLIC_URL#https://}"
+    PUBLIC_HOST="${PUBLIC_HOST%%/*}"
+    PUBLIC_HOST="${PUBLIC_HOST%%:*}"
+    LANDING_URL="http://localhost:${LANDING_PORT}"
+    export VITE_API_URL="${PUBLIC_URL}/api"
+    export VITE_API_PROXY_TARGET="http://localhost:${API_PORT}"
+    export VITE_LANDING_URL="$LANDING_URL"
+    export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="$PUBLIC_HOST"
+    export PUBLIC_APP_URL="$PUBLIC_URL"
+    export PUBLIC_API_URL="${PUBLIC_URL}/api"
+    [ "$DONATE" = 1 ] && export PUBLIC_DONATE_API_URL="http://localhost:${DONATE_PORT}"
+    printf '\n  Landing : %s\n' "$LANDING_URL"
+    printf '  Web     : %s  (forwarded to http://localhost:%s)\n' "$PUBLIC_URL" "$WEB_PORT"
+    printf '  API     : %s/api\n' "$PUBLIC_URL"
+    [ "$DONATE" = 1 ] && printf '  Donate  : http://localhost:%s\n' "$DONATE_PORT"
+    printf '  Hash    : http://localhost:%s\n' "$HASH_PORT"
+    printf '\n'
+
+    start_hash_server
+    run "api"     "31" "api"     bun run dev -- --port "$API_PORT" \
+        --var "APP_URL:${PUBLIC_URL}" \
+        --var "LANDING_URL:${LANDING_URL}" \
+        --var "R2_URL:${PUBLIC_URL}/r2" \
+        --var "DEV_R2_ROUTE:true" \
+        --var "HASH_SERVER_URL:http://localhost:${HASH_PORT}" \
+        "${API_EXTRA_VARS[@]}"
+    [ "$DONATE" = 1 ] && start_donate "$LANDING_URL"
+    run "web"     "32" "web"     bun run dev -- --port "$WEB_PORT"
+    run "landing" "34" "landing" bun run dev -- --port "$LANDING_PORT"
 else
     export VITE_API_URL="http://localhost:${API_PORT}"
     export VITE_API_PROXY_TARGET="http://localhost:${API_PORT}"
