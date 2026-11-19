@@ -44,15 +44,22 @@
     "APP_URL": "https://virtue.yaseed.net",
     "LANDING_URL": "https://virtueinitiative.org",
     "APP_NAME": "Virtue Initiative",
-    "EMAIL_DELIVERY_MODE": "log",
+    "EMAIL_DELIVERY_MODE": "smtp",
     "HASH_SERVER_URL": "https://virtue-hash.yaseed.net",
-    "BUG_REPORT_EMAIL": "samuel.j.schneider@gmail.com"
+    "BUG_REPORT_EMAIL": "samuel.j.schneider@gmail.com",
+    "SMTP_HOST": "w0202169.kasserver.com",
+    "SMTP_PORT": "465",
+    "SMTP_USER": "virtue@yaseed.net",
+    "SMTP_FROM_EMAIL": "virtue@yaseed.net"
   },
   "ratelimits": [
     {
       "name": "RATE_LIMITER",
       "namespace_id": "1001",
-      "simple": { "limit": 60, "period": 60 }
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
     }
   ],
   "routes": [
