@@ -1,0 +1,34 @@
+# Family instance hash server on own-server-01 (Dokploy). See sjs: dienste/virtue.md.
+services:
+  hash-server:
+    image: virtue-hash:${VIRTUE_HASH_IMAGE_TAG:-local}
+    build: .
+    restart: unless-stopped
+    environment:
+      # Public key only (not a secret). Must match JWT_PUBLIC_KEY in api/wrangler.family.json.
+      JWT_PUBLIC_KEY: "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAGnH17UlZo066wnSu04M6LUQO3F3CbsgAmMML1J/cNY8=\n-----END PUBLIC KEY-----"
+      HOST: 0.0.0.0
+      PORT: '8788'
+      DATABASE_PATH: /data/hash-server.sqlite
+    volumes:
+      - hash-data:/data
+    networks: [edge]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: ${EDGE_NETWORK:-dokploy-network}
+      traefik.http.routers.virtue-hash.rule: Host(`virtue-hash.yaseed.net`)
+      traefik.http.routers.virtue-hash.entrypoints: websecure
+      traefik.http.routers.virtue-hash.tls.certresolver: letsencrypt
+      traefik.http.services.virtue-hash.loadbalancer.server.port: '8788'
+volumes:
+  hash-data:
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-dokploy-network}
