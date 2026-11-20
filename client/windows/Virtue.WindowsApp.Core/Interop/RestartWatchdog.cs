@@ -30,6 +30,8 @@ public static class RestartWatchdog
     private const string PackageName = "VirtueInitiative.VirtueAccountability";
     /// <summary>Must match the <c>Application</c> executable in <c>Package.appxmanifest</c>.</summary>
     private const string ExeName = "Virtue.WindowsApp.exe";
+    /// <summary>Family build only: skip the PowerShell watchdog (see <see cref="Register"/>).</summary>
+    private static readonly bool UsePlainLaunchOnly = true;
 
     /// <summary>
     /// Creates (or refreshes) the per-user watchdog task. Safe to call repeatedly.
@@ -45,7 +47,11 @@ public static class RestartWatchdog
         // CLIENT-014: a packaged install also needs cleanup after an uninstall (MSIX runs no app
         // code then), so it gets the script form, which finds the app through the package itself.
         // A task aimed at anything else (an unpackaged or dev run) keeps the plain per-minute launch.
-        if (string.Equals(exePath, AppLaunchPath.ExecutionAliasPath, StringComparison.OrdinalIgnoreCase) || IsPackaged())
+        //
+        // Family build: the PowerShell form is flagged as malware by Bitdefender's Advanced Threat
+        // Defense, so every run uses the plain launch, as releases up to 0.1.9 did. An uninstall
+        // then leaves the task and %ProgramData%\Virtue behind for manual removal.
+        if (!UsePlainLaunchOnly && (string.Equals(exePath, AppLaunchPath.ExecutionAliasPath, StringComparison.OrdinalIgnoreCase) || IsPackaged()))
         {
             return RegisterWithCleanup(quietArg, relaunch: true);
         }
@@ -68,7 +74,7 @@ public static class RestartWatchdog
     /// </summary>
     public static void StopRelaunching(string quietArg)
     {
-        if (IsPackaged())
+        if (!UsePlainLaunchOnly && IsPackaged())
         {
             RegisterWithCleanup(quietArg, relaunch: false);
         }
