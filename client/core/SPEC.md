@@ -247,14 +247,14 @@ The device settings MAY name a check domain (`dns_filter_domain`) that the owner
 
 While authenticated and while the settings name a check domain, the daemon MUST check it as soon as it first appears or changes, then again after a delay drawn anew at random for each check. The delay MUST follow an exponential distribution with a mean of 20 minutes, clamped to between 1 and 60 minutes, so that the time since the last check does not tell when the next one comes. The random source MUST NOT be predictable from earlier delays. A check MUST resolve the control domain `example.com` and then the check domain through the operating system's resolver. An answer counts as blocked when the lookup fails or returns only unspecified (`0.0.0.0`, `::`) or loopback addresses.
 
-- If the control domain is blocked, the result is unknown: the daemon MUST NOT send an event, MUST keep the last result, and MUST check again after 10 minutes.
+- If the control domain is blocked, or the check domain resolves to exactly the same set of addresses as the control domain (as behind a captive portal that answers every name alike), the result is unknown: the daemon MUST NOT send an event, MUST keep the last result, and MUST check again after 10 minutes.
 - Otherwise the result is filtered when the check domain is blocked, and unfiltered when it is not.
 
 The daemon MUST persist the last result and MUST send an event only when it changes:
 
 - `dns_filter_inactive` (risk 90%, so partners are emailed at once) when the first result for a domain is unfiltered, or when it changes from filtered to unfiltered. A first result of filtered MUST NOT send an event.
 - `dns_filter_active` (risk 0%) when it changes from unfiltered to filtered.
-- `dns_filter_check_removed` (risk 90%) when fetched settings stop naming a domain. The daemon MUST then forget the last result.
+- `dns_filter_check_removed` (risk 80%) when fetched settings stop naming a domain. The daemon MUST then forget the last result. The server already emails partners when the check is turned off (API-020, API-030), so this event MUST NOT be extra-high-risk, which would email them again from every device.
 
 When the domain changes to another domain, the daemon MUST forget the last result without sending an event. Each event carries the domain it is about (BATCH-003).
 

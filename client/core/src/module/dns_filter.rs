@@ -2,12 +2,13 @@
 //! OS resolver and reports when their DNS filter stops blocking it. Report
 //! only; nothing here blocks or changes DNS traffic.
 
+use std::collections::BTreeSet;
 use std::net::{IpAddr, ToSocketAddrs};
 
 use serde::{Deserialize, Serialize};
 
 use crate::model::UploadKind;
-use crate::module::lifecycle::EXTRA_HIGH_RISK;
+use crate::module::lifecycle::{EXTRA_HIGH_RISK, HIGH_RISK_LIFECYCLE_ALERT};
 use crate::module::upload::{self, UploadState};
 use crate::rng::RandomSource;
 
@@ -72,8 +73,8 @@ pub struct DnsCheckPlan {
     domain: String,
 }
 
-/// What [`execute`] found; `result` is `None` when the control domain did not
-/// resolve, so the answer is unknown.
+/// What [`execute`] found; `result` is `None` when the answer is unknown: the
+/// control domain did not resolve, or the check domain resolved just like it.
 pub struct DnsCheckOutcome {
     domain: String,
     result: Option<DnsFilterResult>,
@@ -101,10 +102,11 @@ pub fn plan(
         if configured.is_none()
             && let Some(previous) = state.domain.take()
         {
+            // Risk 80%: the server already emailed partners (API-020, API-030).
             upload::enqueue(
                 upload,
                 now_ms,
-                EXTRA_HIGH_RISK,
+                HIGH_RISK_LIFECYCLE_ALERT,
                 UploadKind::DnsFilterCheckRemoved { domain: previous },
             );
         }
@@ -120,13 +122,22 @@ pub fn plan(
 
 /// Resolves the control domain and then the check domain. The only I/O here.
 pub fn execute(plan: DnsCheckPlan, resolver: &dyn DnsResolver) -> DnsCheckOutcome {
-    let result = if is_blocked(resolver.resolve(CONTROL_DOMAIN)) {
+    let control = resolver.resolve(CONTROL_DOMAIN);
+    let result = if is_blocked(&control) {
         tracing::warn!("dns filter check: control domain did not resolve, result unknown");
         None
-    } else if is_blocked(resolver.resolve(&plan.domain)) {
-        Some(DnsFilterResult::Filtered)
     } else {
-        Some(DnsFilterResult::Unfiltered)
+        let checked = resolver.resolve(&plan.domain);
+        if is_blocked(&checked) {
+            Some(DnsFilterResult::Filtered)
+        } else if same_addresses(&control, &checked) {
+            tracing::warn!(
+                "dns filter check: check domain resolved like the control domain, result unknown"
+            );
+            None
+        } else {
+            Some(DnsFilterResult::Unfiltered)
+        }
     };
     DnsCheckOutcome {
         domain: plan.domain,
@@ -136,13 +147,25 @@ pub fn execute(plan: DnsCheckPlan, resolver: &dyn DnsResolver) -> DnsCheckOutcom
 
 /// A failed lookup, or an answer holding only unspecified or loopback
 /// addresses, which is how DNS filters answer a blocked name.
-fn is_blocked(answer: Result<Vec<IpAddr>, String>) -> bool {
+fn is_blocked(answer: &Result<Vec<IpAddr>, String>) -> bool {
     match answer {
         Ok(addrs) => addrs
             .iter()
             .all(|addr| addr.is_unspecified() || addr.is_loopback()),
         Err(_) => true,
     }
+}
+
+/// Whether both answers hold exactly the same set of addresses, as when a
+/// captive portal answers every name alike (CORE-028). Sharing only some
+/// addresses, as two names on one CDN can, does not count.
+fn same_addresses(a: &Result<Vec<IpAddr>, String>, b: &Result<Vec<IpAddr>, String>) -> bool {
+    let (Ok(a), Ok(b)) = (a, b) else {
+        return false;
+    };
+    let a: BTreeSet<&IpAddr> = a.iter().collect();
+    let b: BTreeSet<&IpAddr> = b.iter().collect();
+    a == b
 }
 
 /// Records the outcome, sends an event when the result changed, and schedules
