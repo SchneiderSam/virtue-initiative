@@ -200,6 +200,7 @@ export function isValidTimezone(timezone: string | undefined): timezone is strin
 }
 
 // A plain DNS name such as `example.net`: lowercase labels, at least one dot, no scheme or port.
+// API-020: never `example.com` or its subdomains, which the check uses as its control domain.
 export const dnsFilterDomainSchema = z
   .string()
   .trim()
@@ -207,6 +208,10 @@ export const dnsFilterDomainSchema = z
   .max(253)
   .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/, {
     message: 'Enter a domain such as example.net',
+  })
+  .refine((domain) => domain !== 'example.com' && !domain.endsWith('.example.com'), {
+    message:
+      'Virtue uses example.com to check your network. Use another domain, such as example.net.',
   });
 
 export const updateUserSchema = z

@@ -521,7 +521,7 @@ The client MUST provide a request in this shape.
 }
 ```
 
-`dns_filter_domain` names the domain the user blocks in their DNS filter, which all their devices resolve to check that the filter is in use (CORE-028). The server MUST trim and lowercase it, and MUST respond **HTTP 400** and change nothing unless it is a plain domain name of at most 253 characters with at least one dot and no scheme, port, path or whitespace. `null` MUST clear it.
+`dns_filter_domain` names the domain the user blocks in their DNS filter, which all their devices resolve to check that the filter is in use (CORE-028). The server MUST trim and lowercase it, and MUST respond **HTTP 400** and change nothing unless it is a plain domain name of at most 253 characters with at least one dot and no scheme, port, path or whitespace. It MUST also respond **HTTP 400** for `example.com` and its subdomains, since the check uses `example.com` as its control domain. `null` MUST clear it.
 
 If the request clears a set `dns_filter_domain` or replaces it with a different one, the server MUST immediately email every accepted watcher, naming the previous domain and any new one, using the same immediate-alert delivery as a tamper alert (skipping watchers whose `email_frequency` is `none`). Setting a domain where none was set, or sending the current one again, MUST NOT email. A failure to send MUST NOT fail the request. The alert does not wait for a device to pick up its settings (CORE-028), so turning the check off and back on between two device checks is still reported.
 

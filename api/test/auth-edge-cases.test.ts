@@ -646,6 +646,13 @@ describe('PATCH /user (API-020)', () => {
     expect((await patch(cookie, { dns_filter_domain: 'other.example.org' })).status).toBe(200);
     expect(await domain()).toBe('other.example.org');
 
+    // Only example.com itself and its subdomains are the control domain.
+    expect((await patch(cookie, { dns_filter_domain: 'notexample.com' })).status).toBe(200);
+    expect(await domain()).toBe('notexample.com');
+    expect((await patch(cookie, { dns_filter_domain: 'example.com.net' })).status).toBe(200);
+    expect(await domain()).toBe('example.com.net');
+    expect((await patch(cookie, { dns_filter_domain: 'other.example.org' })).status).toBe(200);
+
     expect((await patch(cookie, { name: 'Renamed' })).status).toBe(200);
     expect((await getUser(cookie)).body).toMatchObject({
       name: 'Renamed',
@@ -664,6 +671,9 @@ describe('PATCH /user (API-020)', () => {
     ['no dot', 'localhost'],
     ['an empty string', ''],
     ['only spaces', '   '],
+    ['the control domain example.com', 'example.com'],
+    ['the control domain in capitals', ' Example.COM '],
+    ['a subdomain of the control domain', 'block.example.com'],
     [
       'more than 253 characters',
       `${'a'.repeat(63)}.${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(63)}.net`,

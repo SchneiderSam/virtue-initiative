@@ -360,6 +360,22 @@ describe('Settings — DNS check domain (WEB-073)', () => {
     expect(bodies).toHaveLength(0);
   });
 
+  it('explains and sends nothing for example.com, the control domain', async () => {
+    const bodies = capturePatches();
+    const user = userEvent.setup();
+    renderWithClient(<Settings />);
+
+    await screen.findByDisplayValue(TEST_USER.name!);
+    await user.click(await checkSwitch());
+    const input = await screen.findByLabelText('DNS check domain');
+    await user.type(input, 'block.example.com');
+    await user.click(saveDomain());
+
+    expect(await screen.findByText(/virtue uses example\.com to check/i)).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(bodies).toHaveLength(0);
+  });
+
   it('sends null and hides the field when switched off with a saved domain after confirming', async () => {
     withSavedDomain();
     const bodies = capturePatches();
